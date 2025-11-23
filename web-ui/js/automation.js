@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000/api/schedules";
+const API_URL = "https://water-bender-service.onrender.com:5000/api/schedules";
 
 document.getElementById("type").addEventListener("change", (e) => {
     const type = e.target.value;

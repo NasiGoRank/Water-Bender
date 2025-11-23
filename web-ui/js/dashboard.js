@@ -5,7 +5,7 @@ class IrrigationDashboard {
         this.isConnected = false;
 
         // MQTT WebSocket broker
-        this.serverUrl = 'ws://localhost:1884' || 'ws://172.26.124.83:1884' || 'ws://10.100.216.83:1884';
+        this.serverUrl = 'wss://f8dcdda3c9b746c3a5a70a83d5758987.s1.eu.hivemq.cloud:8884/mqtt';
 
         // WeatherAPI (set your key & location)
         this.weatherApiKey = '6a51e7780b6a4aaa82935631250611'; // <-- put your WeatherAPI key here

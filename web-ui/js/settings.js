@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:5000/api/auth";
+const API_BASE = "https://water-bender-service.onrender.com:5000/api/auth";
 
 // --- Load Users ---
 async function loadUsers() {

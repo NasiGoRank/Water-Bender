@@ -22,7 +22,7 @@ function appendMessage(sender, text) {
 --------------------------------*/
 async function loadSessions() {
     try {
-        const res = await fetch("http://localhost:5000/chat/sessions");
+        const res = await fetch("https://water-bender-service.onrender.com:5000/chat/sessions");
         const sessions = await res.json();
 
         if (!sessionListContainer) return;
@@ -47,7 +47,7 @@ async function loadSessions() {
                 e.stopPropagation();
                 ConfirmModal.show(`Delete chat session "${s.name}"?`, async () => {
                     try {
-                        await fetch(`http://localhost:5000/chat/session/${s.id}`, { method: "DELETE" });
+                        await fetch(`https://water-bender-service.onrender.com:5000/chat/session/${s.id}`, { method: "DELETE" });
 
                         // Jika sesi yang dihapus sedang aktif, reset tampilan
                         if (s.id === currentSessionId) {
@@ -81,7 +81,7 @@ async function newChat() {
         "e.g. Tomato Disease Info...",  // Placeholder
         async (name) => {               // Callback saat user submit
             try {
-                const res = await fetch("http://localhost:5000/chat/session", {
+                const res = await fetch("https://water-bender-service.onrender.com:5000/chat/session", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ name }),
@@ -110,7 +110,7 @@ async function loadChat(id, name) {
     currentSessionId = id;
     chatbox.innerHTML = "";
     try {
-        const res = await fetch(`http://localhost:5000/chat/history/${id}`);
+        const res = await fetch(`https://water-bender-service.onrender.com:5000/chat/history/${id}`);
         const history = await res.json();
         history.forEach((msg) => appendMessage(msg.role, msg.message));
         await loadSessions();
@@ -130,7 +130,7 @@ function clearChat() {
     // --- CUSTOM MODAL DI SINI ---
     ConfirmModal.show("Clear all messages in this chat?", async () => {
         try {
-            await fetch(`http://localhost:5000/chat/session/${currentSessionId}`, {
+            await fetch(`https://water-bender-service.onrender.com:5000/chat/session/${currentSessionId}`, {
                 method: "DELETE",
             });
             chatbox.innerHTML = "";
