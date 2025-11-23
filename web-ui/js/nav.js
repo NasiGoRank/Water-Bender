@@ -231,9 +231,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Cek jika Toast tersedia (dari langkah sebelumnya)
                     if (window.Toast) {
                         window.Toast.success("Logged out successfully.");
-                        setTimeout(() => window.location.href = "login.html", 1000);
+                        setTimeout(() => window.location.href = "index.html", 1000);
                     } else {
-                        window.location.href = "login.html";
+                        window.location.href = "index.html";
                     }
                 }, "Yes, Logout");
             };
