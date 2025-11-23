@@ -9,7 +9,7 @@ class IrrigationDashboard {
 
         // WeatherAPI (set your key & location)
         this.weatherApiKey = '6a51e7780b6a4aaa82935631250611'; // <-- put your WeatherAPI key here
-        this.weatherQuery = 'auto:ip';             // city name OR "lat,lon" (e.g., "-6.2,106.8")
+        this.weatherQuery = 'Jakarta';             // city name OR "lat,lon" (e.g., "-6.2,106.8")
 
         this.esp32Connected = false;
         this.lastPumpAction = null;
@@ -127,7 +127,16 @@ class IrrigationDashboard {
             const isConnected = data.esp32Status.includes("CONNECTED") || data.esp32Status.includes("ALIVE");
             this.updateESP32Status(isConnected ? "Connected" : "Disconnected");
         }
-
+        if (data.local_ip) {
+            const ipElement = document.getElementById('espIpAddress');
+            if (ipElement) ipElement.textContent = data.local_ip;
+        }
+        if (data.public_ip && data.public_ip !== this.currentPublicIP) {
+            console.log(`🌍 New Location Detected from ESP32: ${data.public_ip}`);
+            this.currentPublicIP = data.public_ip;
+            this.weatherQuery = data.public_ip; // Set query pakai IP ESP
+            this.fetchWeather(); // Refresh cuaca segera
+        }
         this.updateLastUpdateTime();
     }
 

@@ -26,7 +26,7 @@ router.post("/", async (req, res) => {
 
         // ---- 1. Fetch Weather Forecast ----
         // (Weather fetching logic remains the same)
-        const q = "auto:ip";
+        const q = "Jakarta";
         const forecastURL = `https://api.weatherapi.com/v1/forecast.json?key=${weatherKey}&q=${encodeURIComponent(q)}&days=1&aqi=no&alerts=no`;
 
         const weatherRes = await fetch(forecastURL);
