@@ -9,7 +9,10 @@ class IrrigationDashboard {
 
         // WeatherAPI (set your key & location)
         this.weatherApiKey = '6a51e7780b6a4aaa82935631250611'; // <-- put your WeatherAPI key here
-        this.weatherQuery = 'Jakarta';             // city name OR "lat,lon" (e.g., "-6.2,106.8")
+
+        // Default location if ESP32 hasn't sent data yet
+        this.weatherQuery = 'Jakarta';
+        this.currentPublicIP = null;
 
         this.esp32Connected = false;
         this.lastPumpAction = null;
@@ -68,7 +71,11 @@ class IrrigationDashboard {
     // ===== MQTT =====
     connectMQTT() {
         try {
-            this.client = mqtt.connect(this.serverUrl);
+            this.client = mqtt.connect(this.serverUrl, {
+                username: 'backend_user', // Update creds if needed
+                password: 'Irigasi2025!',
+                clientId: 'WebDashboard_' + Math.random().toString(16).substring(2, 8)
+            });
 
             this.client.on('connect', () => {
                 this.isConnected = true;
@@ -127,20 +134,30 @@ class IrrigationDashboard {
             const isConnected = data.esp32Status.includes("CONNECTED") || data.esp32Status.includes("ALIVE");
             this.updateESP32Status(isConnected ? "Connected" : "Disconnected");
         }
+
         if (data.local_ip) {
             const ipElement = document.getElementById('espIpAddress');
             if (ipElement) ipElement.textContent = data.local_ip;
         }
-        if (data.public_ip && data.public_ip !== this.currentPublicIP) {
-            console.log(`🌍 New Location Detected from ESP32: ${data.public_ip}`);
-            this.currentPublicIP = data.public_ip;
-            this.weatherQuery = data.public_ip; // Set query pakai IP ESP
-            this.fetchWeather(); // Refresh cuaca segera
+
+        // LOGIKA UPDATE LOKASI OTOMATIS & SIMPAN KE STORAGE
+        if (data.public_ip) {
+            // 1. Simpan IP Publik ke LocalStorage agar bisa dipakai di halaman Automation
+            localStorage.setItem('esp_public_ip', data.public_ip);
+
+            // 2. Jika IP berubah, update cuaca dashboard sekarang juga
+            if (data.public_ip !== this.currentPublicIP) {
+                console.log(`🌍 New Location Detected from ESP32: ${data.public_ip}`);
+                this.currentPublicIP = data.public_ip;
+                this.weatherQuery = data.public_ip;
+                this.fetchWeather();
+            }
         }
+
         this.updateLastUpdateTime();
     }
 
-    // ===== UI updates =====
+    // ===== UI updates (Sama seperti sebelumnya) =====
     updateSoilData(value) {
         const soilValueElement = document.getElementById('soilValue');
         const soilBarElement = document.getElementById('soilBar');

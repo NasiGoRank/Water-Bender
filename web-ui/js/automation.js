@@ -47,17 +47,25 @@ document.getElementById("autoScheduleBtn").addEventListener("click", async (e) =
         const soil = parseInt(soilText.replace("%", "")) || 40;
         const rain = parseInt(rainText.replace("%", "")) || 10;
 
-        // Send directly to AI auto-schedule route
-        const res = await fetch("http://localhost:5000/api/auto-schedule", {
+        // AMBIL LOKASI DARI LOCALSTORAGE (disimpan oleh dashboard.js)
+        // Jika tidak ada (belum konek ke alat), default ke 'Jakarta'
+        const locationQuery = localStorage.getItem('esp_public_ip') || 'Jakarta';
+
+        // Send directly to AI auto-schedule route with location
+        const res = await fetch("https://water-bender-service.onrender.com/api/auto-schedule", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ soil, rain })
+            body: JSON.stringify({
+                soil,
+                rain,
+                location: locationQuery
+            })
         });
 
         const data = await res.json();
 
         if (data.success) {
-            alert(`✅ AI successfully generated ${data.generated || 0} schedule(s).`);
+            alert(`✅ AI successfully generated ${data.generated || 0} schedule(s) for location: ${locationQuery}`);
             loadSchedules(); // refresh schedule list
         } else {
             alert("⚠️ Failed to create schedule automatically.\n" + (data.error || ""));

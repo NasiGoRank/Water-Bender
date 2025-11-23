@@ -10,23 +10,25 @@ const router = express.Router();
 // ===== Gemini Setup =====
 // Using OpenAI client SDK to access Gemini via compatible endpoint
 const gemini = new OpenAI({
-    apiKey: process.env.GOOGLE_API_KEY || "AIzaSyCIVl8alDq2jVRuHl1Xm1XrgwtzvJlz4oI",
+    apiKey: process.env.GEMINI_API_KEY,
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
 });
 
 // ===== Main Route =====
 router.post("/", async (req, res) => {
     try {
-        const { soil, rain } = req.body;
-        const weatherKey = process.env.WEATHER_API_KEY || "6a51e7780b6a4aaa82935631250611";
+        // TERIMA PARAMETER LOCATION
+        const { soil, rain, location } = req.body;
+        const weatherKey = process.env.WEATHER_API_KEY;
 
         if (!weatherKey) {
             return res.status(500).json({ error: "Missing WEATHER_API_KEY" });
         }
 
         // ---- 1. Fetch Weather Forecast ----
-        // (Weather fetching logic remains the same)
-        const q = "Jakarta";
+        // GUNAKAN LOKASI DARI PARAMETER, DEFAULT JAKARTA
+        const q = location || "Jakarta";
+
         const forecastURL = `https://api.weatherapi.com/v1/forecast.json?key=${weatherKey}&q=${encodeURIComponent(q)}&days=1&aqi=no&alerts=no`;
 
         const weatherRes = await fetch(forecastURL);
@@ -47,6 +49,10 @@ router.post("/", async (req, res) => {
         }));
 
         const now = DateTime.local().setZone(tz);
+
+        // Tambahan info untuk AI agar lebih presisi
+        const dateRangeHint = `Current Date: ${now.toFormat("yyyy-MM-dd")}`;
+
         const prompt = `
 You are an advanced irrigation scheduling assistant.
 
