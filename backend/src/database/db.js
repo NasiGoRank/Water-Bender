@@ -1,22 +1,25 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import dns from 'dns'; // 1. Import library DNS bawaan Node.js
 
-// Load environment variables from .env file
+// 2. Paksa Node.js menggunakan IPv4 agar tidak error ENETUNREACH di Render
+dns.setDefaultResultOrder('ipv4first');
+
+// Load environment variables
 dotenv.config();
 
-// Create a connection pool to Supabase
+// Buat connection pool ke Supabase
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://postgres:gjAW3MAlhSHeEZlR@db.deqrzjdjpvvotjgmnxwq.supabase.co:5432/postgres",
   ssl: {
-    rejectUnauthorized: false // Required for Supabase connections
+    rejectUnauthorized: false // Wajib untuk koneksi ke Supabase dari luar
   }
 });
 
-// Helper function to run queries
-// REMEMBER: PostgreSQL uses $1, $2, $3 for placeholders (not ?)
+// Helper function
 export const query = (text, params) => pool.query(text, params);
 
-// Test connection on startup
+// Test koneksi saat start
 pool.connect((err) => {
   if (err) console.error('❌ Database connection error', err.stack);
   else console.log('✅ Connected to Supabase (PostgreSQL)');
