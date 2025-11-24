@@ -1,25 +1,32 @@
 #include <WiFi.h>
-#include <WiFiClientSecure.h> // PENTING: Untuk koneksi SSL ke HiveMQ
+#include <WiFiClientSecure.h>  // PENTING: Untuk koneksi SSL ke HiveMQ
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <HTTPClient.h>       // PENTING: Untuk cek Public IP
+#include <HTTPClient.h>  // PENTING: Untuk cek Public IP
+
+// ============================
+// KONFIGURASI RELAY (LOW TRIGGER)
+// ============================
+// Relay Low Level Trigger: LOW = Nyala, HIGH = Mati
+#define RELAY_ON LOW
+#define RELAY_OFF HIGH
 
 // ============================
 // 1. WiFi Configuration
 // ============================
-const char* ssid = "PNJ_HOTSPOT";     // Ganti dengan WiFi Anda
+const char* ssid = "PNJ_HOTSPOT";  // Ganti dengan WiFi Anda
 const char* password = "11223344";
 
 // ============================
 // 2. HiveMQ Cloud Configuration
 // ============================
 // URL Cluster (Tanpa tls://)
-const char* mqtt_server = "f8dcdda3c9b746c3a5a70a83d5758987.s1.eu.hivemq.cloud"; 
-const int mqtt_port = 8883; // Port SSL
+const char* mqtt_server = "f8dcdda3c9b746c3a5a70a83d5758987.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;  // Port SSL
 
 // User Device yang dibuat di HiveMQ
-const char* mqtt_user = "awikwok"; 
-const char* mqtt_pass = "vIw$Pcm1$WT9beu"; 
+const char* mqtt_user = "awikwok";
+const char* mqtt_pass = "vIw$Pcm1$WT9beu";
 
 // Gunakan WiFiClientSecure
 WiFiClientSecure espClient;
@@ -30,13 +37,13 @@ PubSubClient client(espClient);
 // ============================
 const int pinSoil = 34;
 const int pinRain = 35;
-const int pinPump = 4; // LOW trigger relay
+const int pinPump = 5;  // LOW trigger relay
 
 // ============================
 // CALIBRATION SETTINGS
 // ============================
-const int SOIL_DRY = 3500; 
-const int SOIL_WET = 1200; 
+const int SOIL_DRY = 3500;
+const int SOIL_WET = 1200;
 const int RAIN_DRY = 4095;
 const int RAIN_WET = 0;
 
@@ -48,12 +55,12 @@ const int rainStopPercent = 70;
 bool manualOverride = false;
 bool manualPumpState = false;
 unsigned long manualStartTime = 0;
-const unsigned long manualTimeout = 60000; // 1 menit timeout
+const unsigned long manualTimeout = 3000;  // 3 detik timeout
 
 unsigned long lastSend = 0;
-const unsigned long sendInterval = 2000; // Kirim data tiap 2 detik
+const unsigned long sendInterval = 2000;  // Kirim data tiap 2 detik
 unsigned long lastStatusPing = 0;
-String publicIP = ""; // Variabel IP Publik
+String publicIP = "";  // Variabel IP Publik
 
 // ============================
 // Helper: Get Public IP
@@ -62,13 +69,13 @@ String getPublicIP() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
     // Menggunakan layanan ipify untuk cek IP publik
-    http.begin("http://api.ipify.org"); 
+    http.begin("http://api.ipify.org");
     int httpCode = http.GET();
-    
+
     if (httpCode > 0) {
       String payload = http.getString();
       http.end();
-      return payload; 
+      return payload;
     }
     http.end();
   }
@@ -83,7 +90,7 @@ void setup_wifi() {
   Serial.println();
   Serial.print("Connecting to WiFi: ");
   Serial.println(ssid);
-  
+
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -115,17 +122,21 @@ void callback(char* topic, byte* payload, unsigned int length) {
     manualOverride = true;
     manualPumpState = true;
     manualStartTime = millis();
-    digitalWrite(pinPump, LOW); 
+
+    // Nyalakan Pompa (Active LOW)
+    digitalWrite(pinPump, RELAY_ON);
+
     client.publish("irrigation/status", "WATER_ON_OK");
-  }
-  else if (message == "WATER_OFF") {
+  } else if (message == "WATER_OFF") {
     manualOverride = true;
     manualPumpState = false;
     manualStartTime = millis();
-    digitalWrite(pinPump, HIGH); 
+
+    // Matikan Pompa (Active LOW)
+    digitalWrite(pinPump, RELAY_OFF);
+
     client.publish("irrigation/status", "WATER_OFF_OK");
-  }
-  else if (message == "AUTO_MODE") {
+  } else if (message == "AUTO_MODE") {
     manualOverride = false;
     client.publish("irrigation/status", "AUTO_MODE_OK");
   }
@@ -155,14 +166,17 @@ void reconnect() {
 // ============================
 void setup() {
   Serial.begin(115200);
+
   pinMode(pinPump, OUTPUT);
-  digitalWrite(pinPump, HIGH); // Start OFF
-  analogReadResolution(12); 
+  // Pastikan saat ESP nyala, Relay MATI duluan (HIGH)
+  digitalWrite(pinPump, RELAY_OFF);
+
+  analogReadResolution(12);
 
   setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-  client.setBufferSize(512); 
+  client.setBufferSize(512);
 }
 
 // ============================
@@ -189,7 +203,7 @@ void loop() {
   // Send Sensor Data
   if (now - lastSend >= sendInterval) {
     lastSend = now;
-    
+
     int soilRaw = analogRead(pinSoil);
     int rainRaw = analogRead(pinRain);
 
@@ -197,7 +211,7 @@ void loop() {
     int soilClamped = constrain(soilRaw, SOIL_WET, SOIL_DRY);
     long soilNumerator = (long)(SOIL_DRY - soilClamped) * 100;
     long soilDenominator = (long)(SOIL_DRY - SOIL_WET);
-    
+
     int soilPercent = 0;
     if (soilDenominator != 0) soilPercent = (int)(soilNumerator / soilDenominator);
 
@@ -206,33 +220,36 @@ void loop() {
     rainPercent = constrain(rainPercent, 0, 100);
 
     String pumpStatus;
+
+    // === LOGIKA OTOMATIS ===
     if (!manualOverride) {
       if (soilPercent < soilStopPercent && rainPercent < rainStopPercent) {
-        digitalWrite(pinPump, LOW);
+        digitalWrite(pinPump, RELAY_ON);  // Nyalakan (LOW)
         pumpStatus = "ON (auto)";
       } else {
-        digitalWrite(pinPump, HIGH);
+        digitalWrite(pinPump, RELAY_OFF);  // Matikan (HIGH)
         pumpStatus = "OFF (auto)";
       }
-    } else {
-      digitalWrite(pinPump, manualPumpState ? LOW : HIGH);
+    }
+    // === LOGIKA MANUAL ===
+    else {
+      // Jika manualPumpState true -> RELAY_ON, jika false -> RELAY_OFF
+      digitalWrite(pinPump, manualPumpState ? RELAY_ON : RELAY_OFF);
       pumpStatus = manualPumpState ? "ON (manual)" : "OFF (manual)";
     }
 
-    // --- JSON CONSTRUCTION (UPDATED) ---
+    // --- JSON CONSTRUCTION ---
     StaticJsonDocument<350> jsonDoc;
-    jsonDoc["soil"] = soilPercent; 
+    jsonDoc["soil"] = soilPercent;
     jsonDoc["rain"] = rainPercent;
     jsonDoc["pump"] = pumpStatus;
     jsonDoc["mode"] = manualOverride ? "manual" : "auto";
-    
-    // INI YANG PENTING: Kirim IP ke Dashboard
     jsonDoc["local_ip"] = WiFi.localIP().toString();
-    jsonDoc["public_ip"] = publicIP; 
+    jsonDoc["public_ip"] = publicIP;
 
     char jsonBuffer[350];
     serializeJson(jsonDoc, jsonBuffer);
-    
+
     client.publish("irrigation/data", jsonBuffer);
     Serial.println(jsonBuffer);
   }

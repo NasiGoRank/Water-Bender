@@ -20,8 +20,8 @@ dotenv.config();
 
 const app = express();
 const API_PORT = process.env.PORT || 5000;
-const WEATHER_API_KEY = process.env.WEATHER_API_KEY || "6a51e7780b6a4aaa82935631250611";
-const CITY = 'auto:ip';
+const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
+const DEFAULT_CITY = 'Jakarta'; // Fallback city
 
 app.use(cors());
 app.use(express.json());
@@ -39,9 +39,10 @@ mqttClient.on('connect', () => {
 let lastPumpState = null;
 
 // Helper: Get Weather Data
-async function getCurrentWeather() {
+async function getCurrentWeather(location) {
     try {
-        const url = `http://api.weatherapi.com/v1/current.json?key=${WEATHER_API_KEY}&q=${CITY}&aqi=no`;
+        const query = location || DEFAULT_CITY;
+        const url = `http://api.weatherapi.com/v1/current.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(query)}&aqi=no`;
         const weatherRes = await fetch(url);
         if (weatherRes.ok) {
             const weatherData = await weatherRes.json();
@@ -67,7 +68,9 @@ mqttClient.on('message', async (topic, message) => {
     if (topic === "irrigation/data") {
         try {
             const data = JSON.parse(payload);
-            const { soil, rain, pump, mode } = data;
+            // Ambil public_ip jika ada untuk lokasi cuaca yang akurat
+            const { soil, rain, pump, mode, public_ip } = data;
+
             const newStatus = pump.includes("ON") ? "ON" : "OFF";
             const newMode = (mode || "").toLowerCase().includes("manual") ? "Manual" : "Auto";
 
@@ -75,7 +78,8 @@ mqttClient.on('message', async (topic, message) => {
             if (newStatus !== lastPumpState) {
                 lastPumpState = newStatus;
 
-                const weatherData = await getCurrentWeather();
+                // Gunakan IP dari ESP32 untuk cuaca (jika ada)
+                const weatherData = await getCurrentWeather(public_ip);
 
                 // PostgreSQL Syntax: $1, $2, $3...
                 await query(
@@ -95,7 +99,7 @@ mqttClient.on('message', async (topic, message) => {
                     ]
                 );
 
-                console.log(`📝 DB Logged: Pump ${newStatus} (${newMode}) | Soil: ${soil}%`);
+                console.log(`📝 DB Logged: Pump ${newStatus} | Loc: ${weatherData.location || 'Unknown'}`);
             }
 
             // Forward to frontend via MQTT
@@ -120,7 +124,7 @@ mqttClient.on('message', async (topic, message) => {
     }
 });
 
-// --- 3. SCHEDULER SYSTEM ---
+// --- 3. SCHEDULER SYSTEM (REVISED) ---
 let activeJobs = new Map();
 
 export async function loadScheduleJobs() {
@@ -131,9 +135,10 @@ export async function loadScheduleJobs() {
     }
     activeJobs.clear();
 
-    // 2. Clean up expired one-time schedules (Postgres Syntax)
+    // 2. Clean up expired one-time schedules
     try {
-        await query("DELETE FROM irrigation_schedule WHERE type='once' AND TO_TIMESTAMP(datetime, 'YYYY-MM-DD HH24:MI') < NOW()");
+        // Postgres syntax: handle 'T' separator replacement just in case
+        await query("DELETE FROM irrigation_schedule WHERE type='once' AND TO_TIMESTAMP(REPLACE(datetime, 'T', ' '), 'YYYY-MM-DD HH24:MI') < NOW()");
     } catch (e) {
         console.warn("⚠️ Could not clean old schedules (Check date format)");
     }
@@ -151,34 +156,61 @@ export async function loadScheduleJobs() {
             // ---- ONE-TIME ----
             if (sch.type === "once") {
                 if (!sch.datetime) continue;
-                // Adjust timezone as needed
-                const scheduleTime = DateTime.fromFormat(sch.datetime.trim(), "yyyy-MM-dd HH:mm", { zone: "Asia/Jakarta" });
+
+                // Normalisasi format tanggal (hapus T jika ada)
+                const cleanDate = sch.datetime.replace("T", " ");
+
+                // Parse waktu menggunakan Timezone Jakarta
+                const scheduleTime = DateTime.fromFormat(cleanDate, "yyyy-MM-dd HH:mm", { zone: "Asia/Jakarta" });
                 const delay = scheduleTime.toMillis() - Date.now();
 
                 if (delay > 0) {
+                    console.log(`🕒 Scheduled ONCE: ${scheduleTime.toFormat("dd MMM HH:mm")} WIB`);
                     job = setTimeout(() => runIrrigation(sch), delay);
                 }
             }
+
             // ---- DAILY ----
             else if (sch.type === "daily") {
                 if (!sch.datetime) continue;
                 const [hour, minute] = sch.datetime.split(":").map(Number);
+
+                // Jalan setiap hari pada jam & menit tertentu
                 const cronPattern = `${minute} ${hour} * * *`;
-                job = cron.schedule(cronPattern, () => runIrrigation(sch));
+
+                job = cron.schedule(cronPattern, () => runIrrigation(sch), {
+                    timezone: "Asia/Jakarta"
+                });
+                console.log(`📅 Scheduled DAILY: ${hour}:${minute} WIB`);
             }
+
             // ---- HOURLY ----
             else if (sch.type === "hourly") {
                 const interval = Number(sch.repeat_interval);
-                const cronPattern = `*/${interval} * * * *`;
-                job = cron.schedule(cronPattern, () => runIrrigation(sch));
+
+                // Jalan pada menit ke-0, setiap X jam
+                const cronPattern = `0 */${interval} * * *`;
+
+                job = cron.schedule(cronPattern, () => runIrrigation(sch), {
+                    timezone: "Asia/Jakarta"
+                });
+                console.log(`⏳ Scheduled HOURLY: Every ${interval} hour(s)`);
             }
+
             // ---- WEEKLY ----
             else if (sch.type === "weekly") {
                 if (!sch.weekday || !sch.datetime) continue;
                 const [hour, minute] = sch.datetime.split(":").map(Number);
+
+                // Mapping hari (jika diperlukan, cron biasanya terima Sun,Mon atau 0-6)
                 const days = sch.weekday.split(",").map(d => d.trim().slice(0, 3)).join(",");
+
                 const cronPattern = `${minute} ${hour} * * ${days}`;
-                job = cron.schedule(cronPattern, () => runIrrigation(sch));
+
+                job = cron.schedule(cronPattern, () => runIrrigation(sch), {
+                    timezone: "Asia/Jakarta"
+                });
+                console.log(`📆 Scheduled WEEKLY: ${days} at ${hour}:${minute} WIB`);
             }
 
             if (job) activeJobs.set(sch.id, job);
@@ -192,15 +224,20 @@ export async function loadScheduleJobs() {
 
 async function runIrrigation(sch) {
     console.log(`💧 Executing Schedule ID ${sch.id} (${sch.type})`);
+
+    // Kirim perintah ON
     mqttClient.publish("irrigation/control", "WATER_ON");
 
+    // Hitung durasi dalam milidetik
     setTimeout(async () => {
+        // Kirim perintah OFF
         mqttClient.publish("irrigation/control", "WATER_OFF");
         console.log(`🛑 Finished irrigation (${sch.duration} min)`);
 
+        // Hapus jadwal jika tipe 'once' dan tidak dicentang 'keep after run'
         if (!sch.keep_after_run && sch.type === "once") {
             await query("DELETE FROM irrigation_schedule WHERE id = $1", [sch.id]);
-            await loadScheduleJobs();
+            await loadScheduleJobs(); // Refresh scheduler
         }
     }, sch.duration * 60 * 1000);
 }
@@ -215,6 +252,14 @@ app.use("/api/history", historyRoutes);
 app.use("/chat", chatRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/auto-schedule", autoScheduleRoutes);
+
+// Graceful Shutdown
+process.on('SIGINT', () => {
+    console.log('\n🛑 Shutting down server...');
+    if (telegramBot.stopPolling) telegramBot.stopPolling();
+    mqttClient.end();
+    process.exit(0);
+});
 
 app.listen(API_PORT, () => {
     console.log(`🚀 Server running on port ${API_PORT}`);

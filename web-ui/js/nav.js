@@ -242,3 +242,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 });
+
+// EXPOSE GLOBALLY
+window.ConfirmModal = ConfirmModal;
+window.InputModal = InputModal;

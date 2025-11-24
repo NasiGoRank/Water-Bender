@@ -2,27 +2,28 @@ import TelegramBot from 'node-telegram-bot-api';
 import fetch from 'node-fetch';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { query } from './database/db.js'; // Use shared Supabase connection
-import { mqttClient } from './mqttClient.js';
+import { query } from './database/db.js'; // Koneksi Database Cloud
+import { mqttClient } from './mqttClient.js'; // Koneksi MQTT Cloud 
 
 dotenv.config();
 
 // --- 1. CONFIGURATION ---
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN || "8457047782:AAGxdeEM5XFbKWBBwBL6hrH2sXWTuakAMgM";
-const WEATHER_API_KEY = process.env.WEATHER_API_KEY || "6a51e7780b6a4aaa82935631250611";
-const CITY = 'auto:ip';
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
+const DEFAULT_CITY = 'Jakarta';
 
 if (!TOKEN) console.error("❌ Telegram Token missing in .env");
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Data Cache
+// Data Cache (Penyimpanan Sementara)
 let deviceState = {
     soil: null,
     rain: null,
     pump: null,
     mode: null,
-    lastUpdate: null
+    lastUpdate: null,
+    public_ip: null
 };
 let lastPumpStatus = 'OFF';
 
@@ -39,40 +40,56 @@ async function getAuthenticatedUser(chatId) {
 }
 
 async function getSystemStatusReport() {
-    if (deviceState.soil === null) {
-        return { text: "⚠️ *No Data Received*\nCheck ESP32 connection.", error: true };
-    }
-
-    const timeDiff = (Date.now() - (deviceState.lastUpdate || 0)) / 1000;
+    const now = Date.now();
+    const timeDiff = (now - (deviceState.lastUpdate || 0)) / 1000;
     const isOnline = timeDiff < 120;
-    const powerStatus = isOnline ? "🟢 Online" : "🔴 Offline";
 
-    let weatherText = "Weather unavailable";
+    const statusIcon = isOnline ? "🟢" : "🔴";
+    const statusText = isOnline ? "Online" : "Offline (No data > 2 mins)";
+
+    const soilText = deviceState.soil !== null ? `${deviceState.soil}%` : "⏳ Waiting...";
+    const rainText = deviceState.rain !== null ? `${deviceState.rain}%` : "⏳ Waiting...";
+    const pumpText = deviceState.pump ? (deviceState.pump.includes("ON") ? "Active 💧" : "Inactive 🛑") : "Unknown";
+    const modeText = deviceState.mode ? (deviceState.mode === 'auto' ? "🤖 Automatic" : "🖐️ Manual") : "Unknown";
+
+    // Ambil Cuaca (Gunakan IP alat jika ada)
+    let weatherText = "☁️ Weather unavailable";
     try {
-        const url = `http://api.weatherapi.com/v1/current.json?key=${WEATHER_API_KEY}&q=${CITY}&aqi=no`;
-        const weatherRes = await fetch(url);
-        if (weatherRes.ok) {
-            const data = await weatherRes.json();
-            weatherText = `*Weather in ${data.location.name}:*
-Condition: ${data.current.condition.text}
-Temp: ${data.current.temp_c}°C`;
+        const locationQuery = deviceState.public_ip || DEFAULT_CITY;
+        if (WEATHER_API_KEY) {
+            const url = `http://api.weatherapi.com/v1/current.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(locationQuery)}&aqi=no`;
+            const weatherRes = await fetch(url);
+            if (weatherRes.ok) {
+                const data = await weatherRes.json();
+                weatherText = `
+*Weather at Location (${data.location.name}):*
+🌡️ Temp: ${data.current.temp_c}°C
+💧 Humidity: ${data.current.humidity}%
+💨 Wind: ${data.current.wind_kph} km/h`;
+            }
         }
     } catch (e) { /* ignore */ }
 
     const response = `
-*System Status Report*
-Device: ${powerStatus}
-Soil: *${deviceState.soil ?? '--'}%*
-Rain: *${deviceState.rain ?? '--'}%*
-Mode: *${deviceState.mode || 'Auto'}*
-Pump: *${deviceState.pump === 'ON' ? 'ON 💧' : 'OFF 🛑'}*
+*🌱 System Status Report*
+--------------------------------
+*Device Status:* ${statusIcon} ${statusText}
+*Last Update:* ${deviceState.lastUpdate ? new Date(deviceState.lastUpdate).toLocaleTimeString() : "Never"}
 
+*📊 Sensors:*
+• Soil Moisture: *${soilText}*
+• Rain Level: *${rainText}*
+
+*⚙️ Controls:*
+• Pump State: *${pumpText}*
+• Operation Mode: *${modeText}*
+--------------------------------
 ${weatherText}
 `;
-    return { text: response, error: false };
+    return { text: response };
 }
 
-// --- 3. LOGIN / LOGOUT ---
+// --- 3. LOGIN / LOGOUT HANDLERS ---
 
 bot.onText(/\/login (.+) (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
@@ -84,51 +101,57 @@ bot.onText(/\/login (.+) (.+)/, async (msg, match) => {
         const user = res.rows[0];
 
         if (!user) {
-            bot.sendMessage(chatId, "⛔ Username not found.");
+            bot.sendMessage(chatId, "⛔ *Access Denied:* Username not found.", { parse_mode: 'Markdown' });
         } else {
             const isMatch = await bcrypt.compare(password, user.password);
             if (isMatch) {
                 await query("UPDATE users SET telegram_chat_id = $1 WHERE id = $2", [chatId, user.id]);
-                bot.sendMessage(chatId, `✅ *Login Successful!*\nWelcome, ${user.username}.`, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `✅ *Login Successful!*\n\nWelcome back, *${user.username}*.\nYou will now receive irrigation alerts.`, { parse_mode: 'Markdown' });
             } else {
-                bot.sendMessage(chatId, "⛔ Incorrect password.");
+                bot.sendMessage(chatId, "⛔ *Access Denied:* Incorrect password.", { parse_mode: 'Markdown' });
             }
         }
     } catch (e) {
         console.error(e);
-        bot.sendMessage(chatId, "❌ Login Error.");
+        bot.sendMessage(chatId, "❌ Internal Server Error.");
     }
 });
 
 bot.onText(/\/logout/, async (msg) => {
     const chatId = msg.chat.id;
     await query("UPDATE users SET telegram_chat_id = NULL WHERE telegram_chat_id = $1", [chatId]);
-    bot.sendMessage(chatId, "🔒 *Logout Successful.*");
+    bot.sendMessage(chatId, "🔒 *Logged Out.*\nYou will no longer receive alerts.");
 });
 
-// Protection Middleware
-const protectedCommands = ['/status', '/on', '/off', '/auto', '/schedule'];
-bot.on('message', async (msg) => {
-    if (!msg.text) return;
-    const isProtected = protectedCommands.some(cmd => msg.text.startsWith(cmd));
-    if (isProtected) {
-        const user = await getAuthenticatedUser(msg.chat.id);
-        if (!user) {
-            bot.sendMessage(msg.chat.id, "🔒 *Access Denied*\nPlease login: `/login username password`", { parse_mode: 'Markdown' });
-        }
-    }
-});
-
-// --- 4. COMMANDS ---
+// --- 4. COMMAND HANDLERS ---
 
 bot.onText(/\/start|\/help/, (msg) => {
-    const help = `*Commands:*\n/login <user> <pass>\n/logout\n/status\n/on\n/off\n/auto\n/schedule`;
+    const help = `
+*🌊 Water Bender Bot Control*
+
+*🔑 Account*
+/login <user> <pass> - Connect to receive alerts
+/logout - Disconnect
+
+*📊 Monitoring*
+/status - Check device & sensors
+
+*🕹️ Controls*
+/on - Pump ON (Manual)
+/off - Pump OFF (Manual)
+/auto - Auto Mode
+
+*📅 Schedule*
+/schedule - View active schedules
+`;
     bot.sendMessage(msg.chat.id, help, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/status/, async (msg) => {
     const user = await getAuthenticatedUser(msg.chat.id);
     if (!user) return;
+
+    bot.sendChatAction(msg.chat.id, 'typing');
     const report = await getSystemStatusReport();
     bot.sendMessage(msg.chat.id, report.text, { parse_mode: 'Markdown' });
 });
@@ -136,24 +159,43 @@ bot.onText(/\/status/, async (msg) => {
 bot.onText(/\/on/, async (msg) => {
     if (!await getAuthenticatedUser(msg.chat.id)) return;
     mqttClient.publish('irrigation/commands', 'WATER_ON');
-    bot.sendMessage(msg.chat.id, "💦 Sent: Pump ON");
+    bot.sendMessage(msg.chat.id, "💦 *Sent:* Pump ON (Manual)", { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/off/, async (msg) => {
     if (!await getAuthenticatedUser(msg.chat.id)) return;
     mqttClient.publish('irrigation/commands', 'WATER_OFF');
-    bot.sendMessage(msg.chat.id, "🛑 Sent: Pump OFF");
+    bot.sendMessage(msg.chat.id, "🛑 *Sent:* Pump OFF (Manual)", { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/auto/, async (msg) => {
     if (!await getAuthenticatedUser(msg.chat.id)) return;
     mqttClient.publish('irrigation/commands', 'AUTO_MODE');
-    bot.sendMessage(msg.chat.id, "🤖 Sent: Auto Mode");
+    bot.sendMessage(msg.chat.id, "🤖 *Sent:* Auto Mode", { parse_mode: 'Markdown' });
 });
 
-// --- 5. MQTT LISTENER (Reuse connection) ---
-// Note: We don't subscribe here again because server.js handles subscriptions.
-// We just listen to the 'message' event from the shared client.
+bot.onText(/\/schedule/, async (msg) => {
+    const user = await getAuthenticatedUser(msg.chat.id);
+    if (!user) return;
+
+    try {
+        const result = await query("SELECT * FROM irrigation_schedule WHERE status = 'active' ORDER BY id DESC LIMIT 5");
+        if (result.rows.length === 0) {
+            bot.sendMessage(msg.chat.id, "📭 No active schedules.");
+        } else {
+            let reply = "*🗓️ Active Schedules:*\n";
+            result.rows.forEach((s, i) => {
+                reply += `\n${i + 1}. *${s.type.toUpperCase()}* (${s.duration} mins)\n   ${s.datetime || s.weekday}`;
+            });
+            bot.sendMessage(msg.chat.id, reply, { parse_mode: 'Markdown' });
+        }
+    } catch (err) {
+        bot.sendMessage(msg.chat.id, "❌ Failed to get schedules.");
+    }
+});
+
+// --- 5. NOTIFICATION SYSTEM (MQTT Listener) ---
+// Bot mendengarkan data dari server/ESP32 untuk mengirim notifikasi
 
 mqttClient.on('message', async (topic, message) => {
     if (topic === 'irrigation/logs') {
@@ -162,18 +204,31 @@ mqttClient.on('message', async (topic, message) => {
             Object.assign(deviceState, data);
             deviceState.lastUpdate = Date.now();
 
-            // Alert Logic: Pump turned ON
+            // DETEKSI PERUBAHAN: Pump OFF -> ON
             if (data.pump && data.pump !== lastPumpStatus) {
                 const isPumpOn = data.pump.includes('ON');
                 const wasPumpOn = lastPumpStatus.includes('ON');
 
                 if (isPumpOn && !wasPumpOn) {
+                    // Ambil semua user yang sudah LOGIN (punya chat_id)
                     const res = await query("SELECT telegram_chat_id FROM users WHERE telegram_chat_id IS NOT NULL");
-                    const users = res.rows;
+                    const activeUsers = res.rows;
 
-                    users.forEach(u => {
-                        bot.sendMessage(u.telegram_chat_id, `💦 *Pump Activated*\nSoil: ${data.soil}%`, { parse_mode: 'Markdown' });
+                    const alertMsg = `
+💦 *IRRIGATION STARTED*
+
+*Conditions:*
+• Soil: ${data.soil}%
+• Rain: ${data.rain}%
+• Mode: ${data.mode || 'Auto'}
+
+_Pump has been activated._
+`;
+                    // Kirim ke semua user
+                    activeUsers.forEach(u => {
+                        bot.sendMessage(u.telegram_chat_id, alertMsg, { parse_mode: 'Markdown' });
                     });
+                    console.log(`[BOT] Alert sent to ${activeUsers.length} users.`);
                 }
                 lastPumpStatus = data.pump;
             }
