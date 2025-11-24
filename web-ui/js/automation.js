@@ -1,87 +1,129 @@
 const API_URL = "https://water-bender-service.onrender.com/api/schedules";
 
-// --- UI Logic ---
-document.getElementById("type").addEventListener("change", (e) => {
-    const type = e.target.value;
-    document.getElementById("datetimeField").classList.toggle("hidden", type !== "once");
-    document.getElementById("dailyField").classList.toggle("hidden", type !== "daily");
-    document.getElementById("hourlyField").classList.toggle("hidden", type !== "hourly");
-    document.getElementById("weeklyField").classList.toggle("hidden", type !== "weekly");
-});
+// --- 1. LOGIKA TAMPILAN INPUT (FIXED) ---
+// Pastikan elemen ada sebelum menambah event listener
+const typeSelect = document.getElementById("type");
 
-// --- Add Schedule ---
-document.getElementById("scheduleForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const type = document.getElementById("type").value;
-    const duration = document.getElementById("duration").value;
-    const keep_after_run = document.getElementById("keepAfterRun").checked ? 1 : 0;
+if (typeSelect) {
+    typeSelect.addEventListener("change", (e) => {
+        const type = e.target.value;
 
-    let payload = { type, duration, keep_after_run };
+        // Helper function untuk hide/show
+        const toggle = (id, show) => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (show) {
+                    el.classList.remove("hidden");
+                    // Sedikit delay untuk animasi halus jika mau
+                } else {
+                    el.classList.add("hidden");
+                }
+            }
+        };
 
-    if (type === "once") payload.datetime = document.getElementById("datetime").value;
-    if (type === "daily") payload.datetime = document.getElementById("dailyTime").value;
-    if (type === "hourly") payload.repeat_interval = document.getElementById("interval").value;
-    if (type === "weekly") {
-        payload.weekday = document.getElementById("weekday").value;
-        payload.datetime = document.getElementById("weeklyTime").value;
-    }
+        toggle("datetimeField", type === "once");
+        toggle("dailyField", type === "daily");
+        toggle("hourlyField", type === "hourly");
+        toggle("weeklyField", type === "weekly");
+    });
 
-    try {
-        await fetch(API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
+    // Trigger saat load pertama kali untuk set state awal
+    typeSelect.dispatchEvent(new Event('change'));
+}
 
-        if (window.Toast) window.Toast.success("Schedule added successfully");
-        e.target.reset();
-        loadSchedules();
-    } catch (err) {
-        console.error(err);
-        if (window.Toast) window.Toast.error("Failed to add schedule");
-    }
-});
+// --- 2. SUBMIT SCHEDULE ---
+const form = document.getElementById("scheduleForm");
+if (form) {
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
 
-// --- AI Button ---
-document.getElementById("autoScheduleBtn").addEventListener("click", async (e) => {
-    const btn = e.target;
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Generating...`;
+        // Ambil nilai-nilai
+        const type = document.getElementById("type").value;
+        const duration = document.getElementById("duration").value;
+        const keep_after_run = document.getElementById("keepAfterRun").checked ? 1 : 0;
 
-    try {
-        const soilText = document.getElementById("soilValue")?.textContent || "40%";
-        const rainText = document.getElementById("rainValue")?.textContent || "10%";
-        const soil = parseInt(soilText.replace("%", "")) || 40;
-        const rain = parseInt(rainText.replace("%", "")) || 10;
-        const locationQuery = localStorage.getItem('esp_public_ip') || 'Jakarta';
+        let payload = { type, duration, keep_after_run };
 
-        const res = await fetch("https://water-bender-service.onrender.com/api/auto-schedule", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ soil, rain, location: locationQuery })
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-            if (window.Toast) window.Toast.success(`AI generated ${data.generated || 0} schedules!`);
-            loadSchedules();
-        } else {
-            if (window.Toast) window.Toast.warning(data.message || "No schedule needed.");
+        // Isi payload sesuai tipe
+        if (type === "once") payload.datetime = document.getElementById("datetime").value;
+        if (type === "daily") payload.datetime = document.getElementById("dailyTime").value;
+        if (type === "hourly") payload.repeat_interval = document.getElementById("interval").value;
+        if (type === "weekly") {
+            payload.weekday = document.getElementById("weekday").value;
+            payload.datetime = document.getElementById("weeklyTime").value;
         }
-    } catch (err) {
-        console.error("AI Schedule Error:", err);
-        if (window.Toast) window.Toast.error("AI service unavailable");
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-    }
-});
 
-// --- Load Schedules (RESPONSIVE UPDATE) ---
+        // Validasi sederhana
+        if (!payload.duration) return alert("Duration is required");
+
+        try {
+            const res = await fetch(API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+
+            if (res.ok) {
+                if (window.Toast) window.Toast.success("Schedule added!");
+                form.reset();
+                // Reset type ke 'once' manual agar UI refresh
+                document.getElementById("type").value = "once";
+                document.getElementById("type").dispatchEvent(new Event('change'));
+
+                loadSchedules();
+            } else {
+                const err = await res.json();
+                alert("Error: " + (err.error || "Failed to add"));
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Connection Error");
+        }
+    });
+}
+
+// --- 3. AI BUTTON ---
+const aiBtn = document.getElementById("autoScheduleBtn");
+if (aiBtn) {
+    aiBtn.addEventListener("click", async (e) => {
+        const btn = e.target.closest('button'); // Pastikan targetnya tombol
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Generating...`;
+
+        try {
+            const soil = 40; // Bisa ambil dari dashboard jika ada, hardcode dulu aman
+            const rain = 10;
+            const locationQuery = localStorage.getItem('esp_public_ip') || 'Jakarta';
+
+            const res = await fetch("https://water-bender-service.onrender.com/api/auto-schedule", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ soil, rain, location: locationQuery })
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                if (window.Toast) window.Toast.success(`AI generated ${data.generated || 0} schedules!`);
+                loadSchedules();
+            } else {
+                alert(data.message || "No schedule needed.");
+            }
+        } catch (err) {
+            console.error("AI Error:", err);
+            alert("AI Service Unavailable");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    });
+}
+
+// --- 4. LOAD LIST (Responsive Card) ---
 async function loadSchedules() {
-    const container = document.getElementById("scheduleListContainer"); // New container ID
+    const container = document.getElementById("scheduleListContainer");
+    if (!container) return;
 
     try {
         const res = await fetch(API_URL);
@@ -90,7 +132,7 @@ async function loadSchedules() {
 
         if (data.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-12 border-2 border-dashed border-gray-700 rounded-xl text-gray-500">
+                <div class="text-center py-12 border-2 border-dashed border-gray-700/50 rounded-2xl text-gray-500">
                     <i class="fas fa-calendar-times text-4xl mb-3 opacity-50"></i>
                     <p>No active schedules.</p>
                 </div>`;
@@ -100,56 +142,51 @@ async function loadSchedules() {
         data.forEach(s => {
             let pattern = "-";
             let icon = "fa-clock";
-            let typeLabel = s.type;
-            let typeClass = "bg-gray-700 text-gray-300";
+            let typeColor = "text-gray-300 bg-gray-700";
 
             if (s.type === "once") {
                 pattern = new Date(s.datetime).toLocaleString();
                 icon = "fa-hourglass-start";
-                typeLabel = "One-Time";
-                typeClass = "bg-blue-900/40 text-blue-400 border border-blue-800";
+                typeColor = "text-blue-300 bg-blue-900/30 border border-blue-700/50";
             } else if (s.type === "daily") {
                 pattern = `Daily at ${s.datetime}`;
                 icon = "fa-calendar-day";
-                typeLabel = "Daily";
-                typeClass = "bg-green-900/40 text-green-400 border border-green-800";
+                typeColor = "text-green-300 bg-green-900/30 border border-green-700/50";
             } else if (s.type === "hourly") {
                 pattern = `Every ${s.repeat_interval} hour(s)`;
                 icon = "fa-history";
-                typeLabel = "Hourly";
-                typeClass = "bg-purple-900/40 text-purple-400 border border-purple-800";
+                typeColor = "text-purple-300 bg-purple-900/30 border border-purple-700/50";
             } else if (s.type === "weekly") {
-                pattern = `${s.weekday} at ${s.datetime}`;
+                pattern = `${s.weekday} @ ${s.datetime}`;
                 icon = "fa-calendar-week";
-                typeLabel = "Weekly";
-                typeClass = "bg-orange-900/40 text-orange-400 border border-orange-800";
+                typeColor = "text-orange-300 bg-orange-900/30 border border-orange-700/50";
             }
 
             const item = document.createElement("div");
-            item.className = "relative flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-gray-800/40 border border-gray-700 rounded-xl hover:bg-gray-800/60 transition gap-4";
+            item.className = "relative flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-gray-800/40 border border-gray-700/50 rounded-xl hover:bg-gray-800/60 transition gap-4 group";
 
             item.innerHTML = `
                 <div class="flex items-center gap-4 w-full md:w-auto">
-                    <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
-                        <i class="fas ${icon} text-gray-300"></i>
+                    <div class="w-10 h-10 rounded-full bg-gray-700/50 flex items-center justify-center shrink-0">
+                        <i class="fas ${icon} text-gray-400 group-hover:text-white transition"></i>
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">
-                            <span class="text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wider ${typeClass}">${typeLabel}</span>
-                            ${s.keep_after_run ? '<span class="text-xs text-gray-500" title="Kept after run"><i class="fas fa-save"></i></span>' : ''}
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${typeColor}">${s.type}</span>
+                            ${s.keep_after_run ? '<i class="fas fa-infinity text-xs text-gray-500" title="Kept after run"></i>' : ''}
                         </div>
                         <p class="text-sm text-gray-300 font-medium truncate">${pattern}</p>
                     </div>
                 </div>
 
-                <div class="flex items-center justify-between w-full md:w-auto gap-6 pl-14 md:pl-0">
+                <div class="flex items-center justify-between w-full md:w-auto gap-6 pl-14 md:pl-0 border-t md:border-0 border-gray-700/30 pt-3 md:pt-0">
                     <div class="flex flex-col">
                         <span class="text-[10px] text-gray-500 uppercase font-bold">Duration</span>
                         <span class="text-sm font-mono text-white">${s.duration}m</span>
                     </div>
                     
                     <button onclick="deleteSchedule(${s.id})" 
-                        class="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition" 
+                        class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition" 
                         title="Delete Schedule">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -159,24 +196,16 @@ async function loadSchedules() {
         });
     } catch (err) {
         console.error("Load Error:", err);
-        container.innerHTML = `<div class="text-center py-4 text-red-400">Failed to load schedules.</div>`;
     }
 }
 
-// --- Delete Schedule (Updated) ---
-async function deleteSchedule(id) {
-    if (typeof ConfirmModal !== 'undefined') {
-        ConfirmModal.show("Delete this schedule?", async () => {
-            await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-            if (window.Toast) window.Toast.success("Schedule deleted");
-            loadSchedules();
-        }, "Yes, Delete");
-    } else {
-        if (confirm("Delete schedule?")) {
-            await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-            loadSchedules();
-        }
+// --- Delete ---
+window.deleteSchedule = async (id) => {
+    if (confirm("Delete this schedule?")) {
+        await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+        loadSchedules();
     }
-}
+};
 
-loadSchedules();
+// Init
+document.addEventListener("DOMContentLoaded", loadSchedules);
