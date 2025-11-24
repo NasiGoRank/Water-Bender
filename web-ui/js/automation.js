@@ -1,23 +1,16 @@
 const API_URL = "https://water-bender-service.onrender.com/api/schedules";
 
-// --- 1. LOGIKA TAMPILAN INPUT (FIXED) ---
-// Pastikan elemen ada sebelum menambah event listener
+// --- 1. LOGIKA TAMPILAN INPUT ---
 const typeSelect = document.getElementById("type");
 
 if (typeSelect) {
     typeSelect.addEventListener("change", (e) => {
         const type = e.target.value;
-
-        // Helper function untuk hide/show
         const toggle = (id, show) => {
             const el = document.getElementById(id);
             if (el) {
-                if (show) {
-                    el.classList.remove("hidden");
-                    // Sedikit delay untuk animasi halus jika mau
-                } else {
-                    el.classList.add("hidden");
-                }
+                if (show) el.classList.remove("hidden");
+                else el.classList.add("hidden");
             }
         };
 
@@ -27,7 +20,7 @@ if (typeSelect) {
         toggle("weeklyField", type === "weekly");
     });
 
-    // Trigger saat load pertama kali untuk set state awal
+    // Trigger saat load pertama kali
     typeSelect.dispatchEvent(new Event('change'));
 }
 
@@ -36,15 +29,12 @@ const form = document.getElementById("scheduleForm");
 if (form) {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-
-        // Ambil nilai-nilai
         const type = document.getElementById("type").value;
         const duration = document.getElementById("duration").value;
         const keep_after_run = document.getElementById("keepAfterRun").checked ? 1 : 0;
 
         let payload = { type, duration, keep_after_run };
 
-        // Isi payload sesuai tipe
         if (type === "once") payload.datetime = document.getElementById("datetime").value;
         if (type === "daily") payload.datetime = document.getElementById("dailyTime").value;
         if (type === "hourly") payload.repeat_interval = document.getElementById("interval").value;
@@ -53,7 +43,6 @@ if (form) {
             payload.datetime = document.getElementById("weeklyTime").value;
         }
 
-        // Validasi sederhana
         if (!payload.duration) return alert("Duration is required");
 
         try {
@@ -69,15 +58,16 @@ if (form) {
                 // Reset type ke 'once' manual agar UI refresh
                 document.getElementById("type").value = "once";
                 document.getElementById("type").dispatchEvent(new Event('change'));
-
                 loadSchedules();
             } else {
                 const err = await res.json();
-                alert("Error: " + (err.error || "Failed to add"));
+                if (window.Toast) window.Toast.error("Error: " + (err.error || "Failed"));
+                else alert("Error: " + (err.error || "Failed"));
             }
         } catch (err) {
             console.error(err);
-            alert("Connection Error");
+            if (window.Toast) window.Toast.error("Connection Error");
+            else alert("Connection Error");
         }
     });
 }
@@ -86,13 +76,13 @@ if (form) {
 const aiBtn = document.getElementById("autoScheduleBtn");
 if (aiBtn) {
     aiBtn.addEventListener("click", async (e) => {
-        const btn = e.target.closest('button'); // Pastikan targetnya tombol
+        const btn = e.target.closest('button');
         const originalText = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Generating...`;
 
         try {
-            const soil = 40; // Bisa ambil dari dashboard jika ada, hardcode dulu aman
+            const soil = 40; // Bisa diupdate ambil dari dashboard
             const rain = 10;
             const locationQuery = localStorage.getItem('esp_public_ip') || 'Jakarta';
 
@@ -108,11 +98,11 @@ if (aiBtn) {
                 if (window.Toast) window.Toast.success(`AI generated ${data.generated || 0} schedules!`);
                 loadSchedules();
             } else {
-                alert(data.message || "No schedule needed.");
+                if (window.Toast) window.Toast.warning(data.message || "No schedule needed.");
             }
         } catch (err) {
             console.error("AI Error:", err);
-            alert("AI Service Unavailable");
+            if (window.Toast) window.Toast.error("AI Service Unavailable");
         } finally {
             btn.disabled = false;
             btn.innerHTML = originalText;
@@ -199,11 +189,36 @@ async function loadSchedules() {
     }
 }
 
-// --- Delete ---
-window.deleteSchedule = async (id) => {
-    if (confirm("Delete this schedule?")) {
-        await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-        loadSchedules();
+// --- Delete (UPDATED: Using ConfirmModal) ---
+window.deleteSchedule = (id) => {
+    const performDelete = async () => {
+        try {
+            const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+            if (res.ok) {
+                if (window.Toast) window.Toast.success("Schedule deleted");
+                else alert("Schedule deleted");
+                loadSchedules();
+            } else {
+                if (window.Toast) window.Toast.error("Failed to delete");
+            }
+        } catch (err) {
+            console.error(err);
+            if (window.Toast) window.Toast.error("Connection Error");
+        }
+    };
+
+    // Cek apakah ConfirmModal tersedia (dari nav.js)
+    if (typeof ConfirmModal !== 'undefined') {
+        ConfirmModal.show(
+            "Are you sure you want to delete this schedule?",
+            performDelete,
+            "Yes, Delete"
+        );
+    } else {
+        // Fallback jika ConfirmModal belum terload
+        if (confirm("Delete this schedule?")) {
+            performDelete();
+        }
     }
 };
 
