@@ -179,7 +179,7 @@ class IrrigationDashboard {
         soilValueElement.textContent = `${value}%`;
         soilBarElement.style.width = `${value}%`;
 
-        if (value < 30) {
+        if (value < 50) {
             soilStatusElement.textContent = 'Dry - Needs watering';
             soilStatusElement.className = 'text-red-400';
         } else if (value < 70) {
@@ -204,7 +204,7 @@ class IrrigationDashboard {
         if (value < 20) {
             rainStatusElement.textContent = 'No rain';
             rainStatusElement.className = 'text-gray-400';
-        } else if (value < 50) {
+        } else if (value < 70) {
             rainStatusElement.textContent = 'Light rain';
             rainStatusElement.className = 'text-blue-400';
         } else {
