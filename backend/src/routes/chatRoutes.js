@@ -10,7 +10,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 async function callWithRetry(messages, retries = 3, delay = 500) {
     try {
         const prompt = messages.map(m => `${m.role}: ${m.content}`).join("\n");
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); // Updated model name if needed
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); // Updated model name if needed
         const result = await model.generateContent(prompt);
         const rawReply = result.response.text();
         return marked(rawReply || "No response.");
