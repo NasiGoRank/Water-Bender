@@ -96,7 +96,7 @@ No explanations or markdown.
 
         // ---- 3. Call Gemini ----
         const llmResponse = await gemini.chat.completions.create({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.5-flash",
             messages: [{ role: "user", content: prompt }]
         });
 
