@@ -1,4 +1,4 @@
-const API_URL = "https://water-bender-service.onrender.com/api/auth/login";
+const API_URL = wbApi("/api/auth/login");
 
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();

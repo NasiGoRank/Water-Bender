@@ -1,4 +1,4 @@
-const API_BASE = "https://water-bender-service.onrender.com/api/auth";
+const API_BASE = wbApi("/api/auth");
 
 // --- Load Users (Responsive Grid) ---
 async function loadUsers() {
@@ -130,7 +130,6 @@ document.getElementById("addUserForm").addEventListener("submit", async (e) => {
     }
 });
 
-// --- Delete User ---
 // --- Delete User (Updated with Custom Modal) ---
 function deleteUser(id, username) {
     // Menggunakan ConfirmModal dari nav.js

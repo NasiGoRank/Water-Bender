@@ -5,6 +5,8 @@ const sendBtn = document.getElementById("sendBtn");
 let sessionListContainer = document.getElementById("chatSessions");
 let currentSessionId = null;
 
+const CHAT_BASE = wbApi("/chat");
+
 // --- Helper: Append Message to Chatbox ---
 function appendMessage(sender, text) {
     const bubble = document.createElement("div");
@@ -25,8 +27,7 @@ function appendMessage(sender, text) {
 // --- Load All Chat Sessions ---
 async function loadSessions() {
     try {
-        // URL SUDAH BENAR (RENDER)
-        const res = await fetch("https://water-bender-service.onrender.com/chat/sessions");
+        const res = await fetch(`${CHAT_BASE}/sessions`);
         const sessions = await res.json();
 
         if (!sessionListContainer) return;
@@ -52,7 +53,7 @@ async function loadSessions() {
                 e.stopPropagation();
                 ConfirmModal.show(`Delete chat session "${s.name}"?`, async () => {
                     try {
-                        await fetch(`https://water-bender-service.onrender.com/chat/session/${s.id}`, { method: "DELETE" });
+                        await fetch(`${CHAT_BASE}/session/${s.id}`, { method: "DELETE" });
 
                         if (s.id === currentSessionId) {
                             currentSessionId = null;
@@ -84,7 +85,7 @@ async function newChat() {
         "Enter chat topic (e.g. Plant Disease)...",
         async (name) => {
             try {
-                const res = await fetch("https://water-bender-service.onrender.com/chat/session", {
+                const res = await fetch(`${CHAT_BASE}/session`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ name }),
@@ -113,7 +114,7 @@ async function loadChat(id, name) {
     currentSessionId = id;
     chatbox.innerHTML = ""; // Clear current view
     try {
-        const res = await fetch(`https://water-bender-service.onrender.com/chat/history/${id}`);
+        const res = await fetch(`${CHAT_BASE}/history/${id}`);
         const history = await res.json();
         history.forEach((msg) => appendMessage(msg.role, msg.message));
 
@@ -131,7 +132,7 @@ function clearChat() {
 
     ConfirmModal.show("Clear all messages in this chat?", async () => {
         try {
-            await fetch(`https://water-bender-service.onrender.com/chat/session/${currentSessionId}`, {
+            await fetch(`${CHAT_BASE}/session/${currentSessionId}`, {
                 method: "DELETE",
             });
             chatbox.innerHTML = "";
@@ -144,8 +145,7 @@ function clearChat() {
     }, "Yes, Clear");
 }
 
-// --- SEND MESSAGE LOGIC (INI YANG HILANG TADI) ---
-// Fungsi ini yang menghubungkan tombol kirim dengan backend AI
+// --- SEND MESSAGE LOGIC ---
 async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
@@ -168,8 +168,8 @@ async function sendMessage() {
     chatbox.scrollTop = chatbox.scrollHeight;
 
     try {
-        // 2. Kirim ke Backend (URL RENDER)
-        const res = await fetch("https://water-bender-service.onrender.com/chat", {
+        // 2. Kirim ke Backend
+        const res = await fetch(`${CHAT_BASE}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -197,7 +197,7 @@ async function sendMessage() {
     }
 }
 
-// --- Event Listeners (SEKARANG SUDAH DIISI) ---
+// --- Event Listeners ---
 sendBtn.addEventListener("click", sendMessage);
 
 input.addEventListener("keypress", function (e) {

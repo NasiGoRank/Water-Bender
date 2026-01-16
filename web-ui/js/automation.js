@@ -1,4 +1,5 @@
-const API_URL = "https://water-bender-service.onrender.com/api/schedules";
+const API_URL = wbApi("/api/schedules");
+const AUTO_SCHEDULE_URL = wbApi("/api/auto-schedule");
 
 // --- 1. LOGIKA TAMPILAN INPUT ---
 const typeSelect = document.getElementById("type");
@@ -86,7 +87,7 @@ if (aiBtn) {
             const rain = 10;
             const locationQuery = localStorage.getItem('esp_public_ip') || 'Jakarta';
 
-            const res = await fetch("https://water-bender-service.onrender.com/api/auto-schedule", {
+            const res = await fetch(AUTO_SCHEDULE_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ soil, rain, location: locationQuery })

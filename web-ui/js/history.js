@@ -1,4 +1,4 @@
-const API_BASE = "https://water-bender-service.onrender.com/api/history";
+const API_BASE = wbApi("/api/history");
 
 // --- Toast Helper (Optional Fallback) ---
 function showNotification(msg, type = 'success') {
